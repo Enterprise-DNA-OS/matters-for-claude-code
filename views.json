@@ -1,13 +1,57 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Matters for Claude Code: what needs attention, rendered by npm run view",
+    "title": "The week",
+    "subtitle": "Matters for Claude Code: the dates, the register, the file and the money. Rendered by npm run view.",
     "sections": [
       {
-        "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "title": "Needs a decision",
+        "note": "Limitation dates, missed deadlines, overdue undertakings, blown estimates, stale WIP, missing CDD. Worst first.",
+        "sql": "select case reason when 'limitation_missed' then 'LIMITATION DATE PASSED' when 'limitation_soon' then 'Limitation date closing in' when 'key_date_missed' then 'Key date MISSED' when 'key_date_week' then 'Key date this week' when 'undertaking_overdue' then 'Undertaking overdue' when 'cdd_missing' then 'No CDD on an open matter' when 'record_gap' then 'Client care file incomplete' when 'over_estimate' then 'Work has passed the estimate' when 'invoice_overdue' then 'Invoice overdue' when 'wip_stale' then 'Unbilled work going stale' when 'invoice_draft' then 'Draft bill never sent' when 'matter_quiet' then 'Matter gone quiet' when 'practising_cert' then 'Practising certificate' when 'task_overdue' then 'Task overdue' else reason end as what, label as record, client, lawyer, days, case when amount_cents > 0 then to_char(amount_cents / 100.0, 'FM$999,999,990') else '' end as value, detail from v_attention order by case reason when 'limitation_missed' then 1 when 'limitation_soon' then 2 when 'key_date_missed' then 3 when 'undertaking_overdue' then 4 when 'key_date_week' then 5 when 'cdd_missing' then 6 when 'record_gap' then 7 when 'over_estimate' then 8 when 'invoice_overdue' then 9 when 'wip_stale' then 10 when 'invoice_draft' then 11 when 'matter_quiet' then 12 when 'practising_cert' then 13 else 14 end, days desc nulls last"
+      },
+      {
+        "title": "Key dates, next 60 days",
+        "note": "The calendar that must not slip. A limitation row with a small number is the whole week's priority.",
+        "sql": "select kind, ref, client, title, to_char(due_on, 'YYYY-MM-DD') as due, case when days_left < 0 then abs(days_left) || ' days AGO' else days_left || ' days' end as countdown, lawyer from v_key_dates where completed_on is null and matter_status = 'open' and due_on <= current_date + 60 order by due_on"
+      },
+      {
+        "title": "The undertakings register",
+        "note": "Rule 10.3: personal, strict, and never discharged by forgetting.",
+        "sql": "select ref, lawyer as given_by, to_char(given_on, 'YYYY-MM-DD') as given, given_to, undertaking, coalesce(to_char(due_on, 'YYYY-MM-DD'), '') as due, case when discharged_on is not null then 'discharged ' || to_char(discharged_on, 'YYYY-MM-DD') when due_on is not null and due_on < current_date then 'OVERDUE ' || (current_date - due_on) || 'd' else 'open' end as status from v_undertakings order by discharged_on nulls first, due_on nulls last"
+      },
+      {
+        "title": "Open matters",
+        "sql": "select ref, client, matter_type as type, description, lawyer, case when wip_cents > 0 then to_char(wip_cents / 100.0, 'FM$999,999,990') else '' end as wip, case when over_estimate then 'OVER' when estimate_cents is not null then 'ok' else '' end as estimate, coalesce(to_char(next_key_date_on, 'YYYY-MM-DD'), '') as next_date, case when days_since_activity > 30 then days_since_activity || 'd quiet' else '' end as quiet, case when record_gaps > 0 then record_gaps || ' GAPS' else 'ok' end as file from v_matters where status = 'open' order by next_key_date_on nulls last"
+      },
+      {
+        "title": "Debtors",
+        "sql": "select number, ref, client, to_char(total_cents / 100.0, 'FM$999,999,990') as total, status, to_char(due_on, 'YYYY-MM-DD') as due, case when status = 'draft' then 'NOT SENT' else bucket end as aged from v_debtors order by days_overdue desc"
+      }
+    ]
+  },
+  {
+    "name": "money",
+    "title": "The money",
+    "subtitle": "WIP, lock-up, recovery and the aged debtors. Rendered by npm run view.",
+    "sections": [
+      {
+        "title": "Lock-up by client",
+        "note": "Fees the firm has earned and does not have: unbilled WIP plus billed-and-unpaid.",
+        "sql": "select client, lawyer, case when wip_cents > 0 then to_char(wip_cents / 100.0, 'FM$999,999,990') else '' end as wip, case when debtors_cents > 0 then to_char(debtors_cents / 100.0, 'FM$999,999,990') else '' end as debtors, to_char(lockup_cents / 100.0, 'FM$999,999,990') as lockup from v_lockup where lockup_cents > 0 order by lockup_cents desc"
+      },
+      {
+        "title": "Work in progress",
+        "note": "Unbilled time at the rates it was worked, plus unbilled disbursements. The oldest entry column is the one to be ashamed of.",
+        "sql": "select ref, client, lawyer, round(wip_minutes / 60.0, 1) || 'h' as time, to_char(wip_time_cents / 100.0, 'FM$999,999,990') as fees, case when wip_disb_cents > 0 then to_char(wip_disb_cents / 100.0, 'FM$999,990') else '' end as disb, to_char(wip_cents / 100.0, 'FM$999,999,990') as total, coalesce(to_char(oldest_unbilled_on, 'YYYY-MM-DD') || ' (' || oldest_unbilled_days || 'd)', '') as oldest_entry from v_wip where matter_status = 'open' and wip_cents > 0 order by wip_cents desc"
+      },
+      {
+        "title": "Recovery by lawyer",
+        "note": "Billed against billed-plus-written-off. The effective rate is what the hour was really worth.",
+        "sql": "select lawyer, round(billable_minutes / 60.0, 1) || 'h' as billable, to_char(worked_cents / 100.0, 'FM$999,999,990') as worked, to_char(billed_cents / 100.0, 'FM$999,999,990') as billed, case when written_off_cents > 0 then to_char(written_off_cents / 100.0, 'FM$999,990') else '' end as written_off, case when billed_cents + written_off_cents > 0 then round(billed_cents * 100.0 / (billed_cents + written_off_cents)) || '%' else '' end as recovery, case when billable_minutes > 0 then to_char(round(billed_cents / (billable_minutes / 60.0)) / 100.0, 'FM$999,990') else '' end as effective_rate from v_recovery where billable_minutes > 0 order by worked_cents desc"
+      },
+      {
+        "title": "Aged debtors",
+        "sql": "select number, client, ref, to_char(total_cents / 100.0, 'FM$999,999,990') as total, status, to_char(issued_on, 'YYYY-MM-DD') as issued, to_char(due_on, 'YYYY-MM-DD') as due, case when status = 'draft' then 'NOT SENT' else bucket end as bucket from v_debtors order by days_overdue desc"
       }
     ]
   }

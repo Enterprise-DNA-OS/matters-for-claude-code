@@ -1,11 +1,102 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "invoice",
+    "title": "Tax invoice",
+    "for_each": "select i.id, (i.number || ' ' || c.name) as name from invoices i join clients c on c.id = i.client_id where i.status <> 'paid' order by i.issued_on desc",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Invoice",
+        "note": "Rendered from the ledger. Check it, then send it yourself: this system never sends anything.",
+        "sql": "select i.number, c.name as billed_to, m.ref as matter, m.description as regarding, to_char(i.issued_on, 'DD Month YYYY') as issued, to_char(i.due_on, 'DD Month YYYY') as due, to_char(i.time_cents / 100.0, 'FM$999,999,990.00') as fees, to_char(i.disbursements_cents / 100.0, 'FM$999,999,990.00') as disbursements, to_char(i.total_cents / 100.0, 'FM$999,999,990.00') as total from invoices i join clients c on c.id = i.client_id join matters m on m.id = i.matter_id where i.id = $1"
+      },
+      {
+        "title": "Fees",
+        "sql": "select to_char(t.worked_on, 'DD Mon YYYY') as date, coalesce(a.full_name, '') as lawyer, round(t.minutes / 60.0, 2) as hours, to_char(t.rate_cents / 100.0, 'FM$999,990') as rate, to_char(round(t.minutes * t.rate_cents / 60.0) / 100.0, 'FM$999,999,990.00') as amount, t.description from time_entries t left join lawyers a on a.id = t.lawyer_id where t.invoice_id = $1 order by t.worked_on"
+      },
+      {
+        "title": "Disbursements",
+        "sql": "select to_char(d.incurred_on, 'DD Mon YYYY') as date, d.description, to_char(d.amount_cents / 100.0, 'FM$999,999,990.00') as amount from disbursements d where d.invoice_id = $1 order by d.incurred_on"
+      }
+    ]
+  },
+  {
+    "name": "engagement-letter-draft",
+    "title": "Letter of engagement (draft)",
+    "for_each": "select m.id, (m.ref || ' ' || c.name) as name from matter_records mr join matters m on m.id = mr.matter_id join clients c on c.id = m.client_id where mr.kind = 'letter of engagement' and mr.status = 'missing' and m.status = 'open' order by m.opened_on",
+    "file": "name",
+    "sections": [
+      {
+        "title": "This is a draft. Nobody has been sent anything.",
+        "note": "Rules 3.4 and 3.5 want the client care and service information and the fee basis in writing, in advance. This draft carries the matter's own facts; put it on your letterhead, complete it, and send it yourself.",
+        "sql": "select c.name as addressed_to, coalesce(a.full_name, '') as from_whom, to_char(current_date, 'DD Month YYYY') as dated, m.ref as our_reference from matters m join clients c on c.id = m.client_id left join lawyers a on a.id = m.lawyer_id where m.id = $1"
+      },
+      {
+        "title": "The retainer",
+        "sql": "select m.description as scope_of_work, m.matter_type as area, case when m.billing_type = 'fixed' then 'fixed fee: ' || to_char(m.fixed_fee_cents / 100.0, 'FM$999,999,990') else 'hourly rates' || coalesce(', estimate ' || to_char(m.estimate_cents / 100.0, 'FM$999,999,990'), '') end as fee_basis, coalesce(a.full_name, 'to be confirmed') as person_with_carriage, coalesce(a.role, '') as their_role from matters m left join lawyers a on a.id = m.lawyer_id where m.id = $1"
+      },
+      {
+        "title": "Rates that would apply",
+        "sql": "select a.full_name as fee_earner, a.role, to_char(a.rate_cents / 100.0, 'FM$999,990') || ' per hour' as rate from lawyers a where a.active and exists (select 1 from matters m where m.id = $1) order by a.rate_cents desc"
+      },
+      {
+        "title": "The client care file position",
+        "note": "What is already on file and what this letter closes.",
+        "sql": "select mr.kind as record, case mr.status when 'missing' then 'MISSING' else mr.status end as status, coalesce(to_char(mr.done_on, 'DD Mon YYYY'), '') as done from matter_records mr where mr.matter_id = $1 order by mr.kind"
+      }
+    ]
+  },
+  {
+    "name": "matter-status-report",
+    "title": "Matter status report",
+    "for_each": "select m.id, (m.ref || ' ' || c.name) as name from matters m join clients c on c.id = m.client_id where m.status = 'open' order by m.ref",
+    "file": "name",
+    "sections": [
+      {
+        "title": "The matter",
+        "note": "A client update written from the record: what has happened, what it has cost, what is next. Read it before it goes anywhere.",
+        "sql": "select c.name as client, m.ref, m.description as matter, coalesce(a.full_name, '') as lawyer, to_char(m.opened_on, 'DD Month YYYY') as opened, to_char(current_date, 'DD Month YYYY') as prepared_on from matters m join clients c on c.id = m.client_id left join lawyers a on a.id = m.lawyer_id where m.id = $1"
+      },
+      {
+        "title": "What has happened",
+        "sql": "select to_char(fn.noted_on, 'DD Mon YYYY') as date, fn.channel, fn.note from file_notes fn where fn.matter_id = $1 order by fn.noted_on desc limit 10"
+      },
+      {
+        "title": "What is coming",
+        "sql": "select k.kind, k.title, to_char(k.due_on, 'DD Month YYYY') as due from key_dates k where k.matter_id = $1 and k.completed_on is null order by k.due_on"
+      },
+      {
+        "title": "The fees position",
+        "sql": "select case when w.estimate_cents is not null then to_char(w.estimate_cents / 100.0, 'FM$999,999,990') else coalesce('fixed fee ' || to_char(w.fixed_fee_cents / 100.0, 'FM$999,999,990'), 'no estimate recorded') end as estimate, to_char(w.wip_cents / 100.0, 'FM$999,999,990') as work_not_yet_billed, to_char(coalesce((select sum(i.total_cents) from invoices i where i.matter_id = $1), 0) / 100.0, 'FM$999,999,990') as billed_to_date from v_wip w where w.matter_id = $1"
+      }
+    ]
+  },
+  {
+    "name": "lawyer-week-report",
+    "title": "Fee earner week report",
+    "for_each": "select a.id, a.full_name as name from lawyers a where a.active order by a.full_name",
+    "file": "name",
+    "sections": [
+      {
+        "title": "The fee earner",
+        "sql": "select a.full_name as lawyer, a.role, case when a.role = 'legal executive' then 'n/a' else coalesce(a.practising_cert || ', expires ' || to_char(a.pc_expires_on, 'DD Mon YYYY'), 'NO CERTIFICATE ON FILE') end as practising_certificate, to_char(current_date, 'DD Month YYYY') as prepared_on, (select count(*) from matters m where m.lawyer_id = a.id and m.status = 'open') as open_matters from lawyers a where a.id = $1"
+      },
+      {
+        "title": "Their matters",
+        "sql": "select v.ref, v.client, v.matter_type as type, v.description, case when v.wip_cents > 0 then to_char(v.wip_cents / 100.0, 'FM$999,999,990') else '' end as wip, coalesce(to_char(v.next_key_date_on, 'YYYY-MM-DD'), '') as next_date, case when v.record_gaps > 0 then v.record_gaps || ' GAPS' else 'ok' end as file from v_matters v join lawyers a on a.full_name = v.lawyer where a.id = $1 and v.status = 'open' order by v.next_key_date_on nulls last"
+      },
+      {
+        "title": "Their key dates, next 60 days",
+        "sql": "select k.kind, k.ref, k.client, k.title, to_char(k.due_on, 'YYYY-MM-DD') as due, case when k.days_left < 0 then abs(k.days_left) || ' days AGO' else k.days_left || ' days' end as countdown from v_key_dates k join lawyers a on a.full_name = k.lawyer where a.id = $1 and k.completed_on is null and k.matter_status = 'open' and k.due_on <= current_date + 60 order by k.due_on"
+      },
+      {
+        "title": "Their open undertakings",
+        "sql": "select u.ref, to_char(u.given_on, 'YYYY-MM-DD') as given, u.given_to, u.undertaking, coalesce(to_char(u.due_on, 'YYYY-MM-DD'), '') as due from v_undertakings u join lawyers a on a.full_name = u.lawyer where a.id = $1 and u.discharged_on is null order by u.due_on nulls last"
+      },
+      {
+        "title": "Their week in time",
+        "sql": "select to_char(t.worked_on, 'YYYY-MM-DD') as date, m.ref, round(t.minutes / 60.0, 2) as hours, t.description, case when t.billable then to_char(round(t.minutes * t.rate_cents / 60.0) / 100.0, 'FM$999,990') else 'no charge' end as value from time_entries t join matters m on m.id = t.matter_id where t.lawyer_id = $1 and t.worked_on >= current_date - 7 order by t.worked_on desc"
+      }
     ]
   }
 ]

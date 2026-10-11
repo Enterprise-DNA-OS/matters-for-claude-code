@@ -1,0 +1,18 @@
+{
+  "_": "What npm run app reads: each key is one CLI command run with --json. The app draws app/data.js from these.",
+  "cli": "scripts/matters.mjs",
+  "sources": {
+    "stats": ["stats"],
+    "attention": ["attention"],
+    "matters": ["matters"],
+    "keydates": ["key-dates", "--days=90"],
+    "undertakings": ["undertakings"],
+    "wip": ["wip"],
+    "debtors": ["debtors"],
+    "lockup": ["lockup"],
+    "recovery": ["recovery"],
+    "lawyers": ["lawyers"],
+    "compliance": ["compliance"],
+    "clients": ["clients"]
+  }
+}

@@ -53,13 +53,15 @@ Fill this in once. A worker with context knows. A worker without it guesses.
 | Is the file complete, what would a complaint find | `/compliance` |
 | Bring the practice over from the old system | `/import` |
 | Change how this system works | `/customise` |
-| A new page to look at | `/new-view` |
+| A new page in the app | add it to `app/config.js` (data keys in `app/sources.json`, each one a CLI command with `--json`), then `npm run app` and look at it |
+| A printable page | `/new-view` |
 | The paperwork, in our brand | `npm run docs` |
 
 If an ask fits nothing here, run the CLI directly (`npm run matters -- help`) and then propose a new command for it.
 
 ## Hard rules
 
+- The app (`npm run app`) only shows. Never add a button, form or link to it that changes a record: every change goes through the CLI, so the rules and the log apply.
 - **No trust money, no filing, ever.** This system holds no client funds, keeps no trust ledger, files nothing at any court or registry, and does not talk to Landonline. Trust money lives in an audited trust accounting system under the Lawyers and Conveyancers Act 2006. If asked to add trust accounting, say no and say why.
 - Never send email or letters from here. Draft to `drafts/`, render with `npm run docs`, a person sends. That includes every engagement letter, client update and invoice.
 - Never open a matter over a conflict hit without the operator's explicit assessment in this session. The CLI refuses; `--force` is the operator's decision, and the reasoning goes in the conflict record immediately (rr 5.4, 6.1).
@@ -90,7 +92,7 @@ If an ask fits nothing here, run the CLI directly (`npm run matters -- help`) an
 - `supabase/migrations/` the schema, plain SQL. `npm run migrate` applies it. Never edit an applied migration; add the next one.
 - `.claude/commands/` the slash commands. Add one every time the same ask comes twice.
 - `brand.json`, `views.json`, `documents.json` the HTML output: whose name is on it, what pages, what paperwork.
-- `docs/compliance.md` the rules `/compliance` checks, each with its source. `docs/replace-actionstep.md` moving off the incumbent. `docs/why-no-front-end.md` the honest trade-offs.
+- `docs/compliance.md` the rules `/compliance` checks, each with its source. `docs/replace-actionstep.md` moving off the incumbent. `docs/why-no-front-end.md` the honest trade-offs. `app/` the read-only app.
 - `exports/` whole database dumps. `drafts/` anything written for a person to send.
 
 Built by Enterprise DNA. Installed and run for you as part of Omni: https://enterprisedna.co/omni/instead-of/actionstep
